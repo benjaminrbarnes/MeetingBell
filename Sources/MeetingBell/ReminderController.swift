@@ -13,6 +13,7 @@ final class ReminderController: NSObject {
 
     private var currentEvent: MeetingEvent?
     private var acknowledgedEventKeys = Set<String>()
+    private var ongoingEvents: [MeetingEvent] = []
     private var soundTimer: Timer?
     private var showOnlyTime: Bool {
         get { UserDefaults.standard.bool(forKey: Self.showOnlyTimeKey) }
@@ -41,8 +42,14 @@ final class ReminderController: NSObject {
         update(event: nil, accessMessage: "Starting MeetingBell...")
     }
 
-    func update(event: MeetingEvent?, accessMessage: String? = nil, now: Date = Date()) {
+    func update(
+        event: MeetingEvent?,
+        ongoingEvents: [MeetingEvent] = [],
+        accessMessage: String? = nil,
+        now: Date = Date()
+    ) {
         currentEvent = event
+        self.ongoingEvents = ongoingEvents.filter { $0.endDate > now }
 
         let state = displayState(for: event, accessMessage: accessMessage, now: now)
         setStatusAppearance(title: state.title, backgroundColor: state.backgroundColor)
@@ -59,11 +66,27 @@ final class ReminderController: NSObject {
     }
 
     @objc private func acknowledgeCurrentEvent() {
-        guard soundTimer != nil, let currentEvent else { return }
+        guard silenceCurrentEvent() != nil else { return }
+
+        refreshAction()
+    }
+
+    @objc private func acknowledgeAndJoinCurrentEvent() {
+        guard let silencedEvent = silenceCurrentEvent() else { return }
+
+        if let joinURL = silencedEvent.joinURL {
+            NSWorkspace.shared.open(joinURL)
+        }
+
+        refreshAction()
+    }
+
+    private func silenceCurrentEvent() -> MeetingEvent? {
+        guard soundTimer != nil, let currentEvent else { return nil }
 
         acknowledgedEventKeys.insert(currentEvent.acknowledgeKey)
         stopSound()
-        refreshAction()
+        return currentEvent
     }
 
     @objc private func refreshNow() {
@@ -179,30 +202,26 @@ final class ReminderController: NSObject {
             return
         }
 
-        menu.addItem(sectionHeader("Meeting"))
+        let ongoingEvents = activeOngoingEvents()
+
+        if !ongoingEvents.isEmpty {
+            menu.addItem(sectionHeader("Ongoing"))
+
+            for (index, event) in ongoingEvents.enumerated() {
+                if index > 0 {
+                    menu.addItem(.separator())
+                }
+
+                addMeetingDetails(for: event, to: menu, detail: "Ends at \(formatTime(event.endDate))")
+            }
+
+            menu.addItem(.separator())
+        }
+
+        menu.addItem(sectionHeader("Next Meeting"))
 
         if let currentEvent {
-            menu.addItem(disabledItem(currentEvent.title))
-            menu.addItem(disabledItem(state.detail))
-            menu.addItem(disabledItem("Calendar: \(currentEvent.calendarTitle)"))
-
-            if let location = currentEvent.location, !location.isEmpty {
-                menu.addItem(disabledItem("Location: \(location)"))
-            }
-
-            if let joinURL = currentEvent.joinURL {
-                let item = NSMenuItem(title: "Join Meeting", action: #selector(openURL), keyEquivalent: "j")
-                item.target = self
-                item.representedObject = joinURL
-                menu.addItem(item)
-            }
-
-            if let url = currentEvent.url, url != currentEvent.joinURL {
-                let item = NSMenuItem(title: "Open Event URL", action: #selector(openURL), keyEquivalent: "")
-                item.target = self
-                item.representedObject = url
-                menu.addItem(item)
-            }
+            addMeetingDetails(for: currentEvent, to: menu, detail: state.detail)
         } else {
             menu.addItem(disabledItem(state.detail))
         }
@@ -252,16 +271,53 @@ final class ReminderController: NSObject {
         menu.addItem(sectionHeader("Meeting Started"))
 
         if let currentEvent {
-            menu.addItem(disabledItem(currentEvent.title))
-            menu.addItem(disabledItem(state.detail))
+            addMeetingDetails(for: currentEvent, to: menu, detail: state.detail, includeJoinAction: false)
         }
 
         menu.addItem(.separator())
+
+        if currentEvent?.joinURL != nil {
+            let joinItem = NSMenuItem(title: "Silence and Join Meeting", action: #selector(acknowledgeAndJoinCurrentEvent), keyEquivalent: "")
+            joinItem.target = self
+            joinItem.isEnabled = true
+            menu.addItem(joinItem)
+        }
 
         let ackItem = NSMenuItem(title: "Silence Meeting", action: #selector(acknowledgeCurrentEvent), keyEquivalent: "")
         ackItem.target = self
         ackItem.isEnabled = true
         menu.addItem(ackItem)
+    }
+
+    private func addMeetingDetails(
+        for event: MeetingEvent,
+        to menu: NSMenu,
+        detail: String,
+        includeJoinAction: Bool = true
+    ) {
+        menu.addItem(disabledItem(event.title))
+        menu.addItem(disabledItem(detail))
+        menu.addItem(disabledItem("Calendar: \(event.calendarTitle)"))
+
+        if let location = event.location, !location.isEmpty {
+            menu.addItem(disabledItem("Location: \(location)"))
+        }
+
+        guard includeJoinAction else { return }
+
+        if let joinURL = event.joinURL {
+            let item = NSMenuItem(title: "Join Meeting", action: #selector(openURL), keyEquivalent: "j")
+            item.target = self
+            item.representedObject = joinURL
+            menu.addItem(item)
+        }
+
+        if let url = event.url, url != event.joinURL {
+            let item = NSMenuItem(title: "Open Event URL", action: #selector(openURL), keyEquivalent: "")
+            item.target = self
+            item.representedObject = url
+            menu.addItem(item)
+        }
     }
 
     @objc private func openURL(_ sender: NSMenuItem) {
@@ -342,6 +398,12 @@ final class ReminderController: NSObject {
         guard let event else { return false }
 
         return acknowledgedEventKeys.contains(event.acknowledgeKey)
+    }
+
+    private func activeOngoingEvents(now: Date = Date()) -> [MeetingEvent] {
+        ongoingEvents
+            .filter { $0.endDate > now }
+            .sorted { $0.startDate < $1.startDate }
     }
 
     private func formatCountdown(_ seconds: TimeInterval) -> String {

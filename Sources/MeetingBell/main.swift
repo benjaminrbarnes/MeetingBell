@@ -59,11 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        let acknowledgedKeys = reminderController.acknowledgedKeys()
+        let ongoingEvents = calendarWatcher.ongoingEvents()
         let event = calendarWatcher.nextEvent(
-            excludingAcknowledged: reminderController.acknowledgedKeys(),
+            excludingAcknowledged: acknowledgedKeys,
             earliestStartDate: reminderController.sessionStartDate()
         )
-        reminderController.update(event: event)
+        reminderController.update(event: event, ongoingEvents: ongoingEvents)
     }
 
     private func createTestMeeting() {

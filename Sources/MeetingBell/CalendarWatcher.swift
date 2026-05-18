@@ -60,6 +60,19 @@ final class CalendarWatcher {
             .first
     }
 
+    func ongoingEvents(now: Date = Date()) -> [MeetingEvent] {
+        let windowStart = now.addingTimeInterval(-lookBehind)
+        let windowEnd = now
+        let calendars = eventStore.calendars(for: .event)
+        let predicate = eventStore.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: calendars)
+
+        return eventStore.events(matching: predicate)
+            .filter { isOngoingEligible($0, now: now) }
+            .map(makeMeetingEvent)
+            .filter { $0.startDate <= now && $0.endDate > now }
+            .sorted { $0.startDate < $1.startDate }
+    }
+
     func createTestMeeting(now: Date = Date()) throws -> MeetingEvent {
         guard let calendar = eventStore.defaultCalendarForNewEvents else {
             throw CalendarWatcherError.missingDefaultCalendar
@@ -110,6 +123,14 @@ final class CalendarWatcher {
         return true
     }
 
+    private func isOngoingEligible(_ event: EKEvent, now: Date) -> Bool {
+        guard !event.isAllDay else { return false }
+        guard event.startDate <= now && event.endDate > now else { return false }
+        guard participantStatus(for: event) != .declined else { return false }
+
+        return true
+    }
+
     private func participantStatus(for event: EKEvent) -> EKParticipantStatus {
         event.attendees?
             .first { $0.isCurrentUser }
@@ -120,7 +141,7 @@ final class CalendarWatcher {
         let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return MeetingEvent(
-            id: event.eventIdentifier ?? "\(event.calendarItemIdentifier)-\(event.startDate.timeIntervalSince1970)",
+            id: event.calendarItemIdentifier,
             title: title?.isEmpty == false ? title! : "Untitled meeting",
             startDate: event.startDate,
             endDate: event.endDate,
