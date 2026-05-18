@@ -74,13 +74,13 @@ MEETINGBELL_DEVELOPMENT_MODE=0 ./scripts/build-app.sh
 Build a distributable zip:
 
 ```sh
-./scripts/package-release.sh 0.1.0
+./scripts/package-release.sh 0.1.1
 ```
 
 That creates:
 
 ```sh
-release/MeetingBell-0.1.0-macOS.zip
+release/MeetingBell-0.1.1-macOS.zip
 ```
 
 Upload that zip to a GitHub Release. Teammates can download it, unzip it, and drag `MeetingBell.app` into `/Applications`.
