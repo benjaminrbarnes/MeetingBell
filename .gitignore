@@ -1,0 +1,18 @@
+.DS_Store
+
+# SwiftPM build output
+.build/
+.swiftpm/
+
+# Local app bundles and release artifacts
+MeetingBell.app/
+dist/
+release/
+
+# Generated icon intermediates
+Resources/AppIcon.iconset/
+
+# Xcode/local editor state
+DerivedData/
+xcuserdata/
+*.xcuserstate
