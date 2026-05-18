@@ -4,18 +4,27 @@ MeetingBell is a small macOS menu bar app for people who miss meetings because n
 
 It reads your local macOS Calendar events, shows a countdown to the next meeting in the menu bar, changes color as the meeting gets close, and can ding repeatedly once the meeting starts until you acknowledge it.
 
-## What It Does
+<img width="138" height="30" alt="Screenshot 2026-05-18 at 9 12 34 AM" src="https://github.com/user-attachments/assets/7476ecfb-bda7-429e-b2de-e51f415eacf0" />
+<img width="139" height="30" alt="Screenshot 2026-05-18 at 9 12 51 AM" src="https://github.com/user-attachments/assets/0daa4199-e1a1-454e-80bb-25d34c0c87f8" />
+<img width="136" height="30" alt="Screenshot 2026-05-18 at 9 13 17 AM" src="https://github.com/user-attachments/assets/c858f8d6-0c3f-40d3-a394-810e7ab29efb" />
+<img width="152" height="30" alt="Screenshot 2026-05-18 at 9 14 10 AM" src="https://github.com/user-attachments/assets/20dd1631-c6f7-4950-88a1-01fdbfaead87" />
 
-- Menu bar countdown to your next busy, non-all-day Calendar event.
-- Light blue background when a meeting is within 5 minutes.
-- Yellow background when a meeting is within 2 minutes.
-- Red background once the meeting has started.
-- Optional `Play Sound Until Silenced` setting; while ringing, the menu only shows `Silence Meeting`.
-- Meetings already in progress when MeetingBell opens are skipped so the menu bar shows the next meeting instead.
-- `Join Meeting` action when MeetingBell finds a Zoom, Google Meet, Teams, Chime, Webex, or BlueJeans link.
-- `Launch at Login` option so it starts automatically.
-- Optional `Show Time Only` mode to hide meeting titles from the menu bar.
-- Local-only Calendar access through macOS EventKit.
+
+## What It Does
+### Stay On Time
+- ⏰ Shows a menu bar countdown to your next real meeting.
+- 🟦 Turns light blue when a meeting is within 5 minutes.
+- 🟨 Turns yellow when a meeting is within 2 minutes.
+- 🟥 Turns red once the meeting starts.
+### Get Pulled In
+- 🔔 Optional `Play Sound Until Silenced` mode.
+- 👆 While ringing, the menu only shows `Silence Meeting`.
+- 🚪 Skips meetings already in progress when MeetingBell opens.
+- 🔗 Shows `Join Meeting` when it finds Zoom, Meet, Teams, Chime, Webex, or BlueJeans links.
+### Keep It Simple
+- 🚀 `Launch at Login` keeps MeetingBell running automatically.
+- 🙈 `Show Time Only` hides meeting titles from the menu bar.
+- 🔒 Calendar access stays local through macOS EventKit.
 
 ## Getting Set Up
 
