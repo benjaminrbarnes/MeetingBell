@@ -82,7 +82,7 @@ final class ReminderController: NSObject {
     }
 
     private func silenceCurrentEvent() -> MeetingEvent? {
-        guard soundTimer != nil, let currentEvent else { return nil }
+        guard let currentEvent else { return nil }
 
         acknowledgedEventKeys.insert(currentEvent.acknowledgeKey)
         stopSound()
@@ -203,6 +203,7 @@ final class ReminderController: NSObject {
         }
 
         let ongoingEvents = activeOngoingEvents()
+            .filter { $0.acknowledgeKey != currentEvent?.acknowledgeKey }
 
         if !ongoingEvents.isEmpty {
             menu.addItem(sectionHeader("Ongoing"))
@@ -218,10 +219,19 @@ final class ReminderController: NSObject {
             menu.addItem(.separator())
         }
 
-        menu.addItem(sectionHeader("Next Meeting"))
+        menu.addItem(sectionHeader(state.canAcknowledge ? "Current Meeting" : "Next Meeting"))
 
         if let currentEvent {
-            addMeetingDetails(for: currentEvent, to: menu, detail: state.detail)
+            addMeetingDetails(
+                for: currentEvent,
+                to: menu,
+                detail: state.detail,
+                includeJoinAction: !state.canAcknowledge
+            )
+
+            if state.canAcknowledge {
+                addDismissActions(for: currentEvent, to: menu)
+            }
         } else {
             menu.addItem(disabledItem(state.detail))
         }
@@ -287,6 +297,20 @@ final class ReminderController: NSObject {
         ackItem.target = self
         ackItem.isEnabled = true
         menu.addItem(ackItem)
+    }
+
+    private func addDismissActions(for event: MeetingEvent, to menu: NSMenu) {
+        if event.joinURL != nil {
+            let joinItem = NSMenuItem(title: "Dismiss and Join Meeting", action: #selector(acknowledgeAndJoinCurrentEvent), keyEquivalent: "")
+            joinItem.target = self
+            joinItem.isEnabled = true
+            menu.addItem(joinItem)
+        }
+
+        let dismissItem = NSMenuItem(title: "Dismiss Meeting", action: #selector(acknowledgeCurrentEvent), keyEquivalent: "")
+        dismissItem.target = self
+        dismissItem.isEnabled = true
+        menu.addItem(dismissItem)
     }
 
     private func addMeetingDetails(
