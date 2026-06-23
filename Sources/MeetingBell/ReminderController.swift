@@ -5,6 +5,12 @@ import Foundation
 final class ReminderController: NSObject {
     private static let showOnlyTimeKey = "showOnlyTimeToNextMeeting"
     private static let soundEnabledKey = "soundEnabled"
+    private static let alertHoursEnabledKey = "alertHoursEnabled"
+    private static let alertStartMinuteKey = "alertStartMinuteOfDay"
+    private static let alertEndMinuteKey = "alertEndMinuteOfDay"
+    private static let defaultAlertStartMinute = 9 * 60
+    private static let defaultAlertEndMinute = 18 * 60
+    private static let minutesPerDay = 24 * 60
 
     private let statusItem: NSStatusItem
     private let refreshAction: @MainActor () -> Void
@@ -25,6 +31,30 @@ final class ReminderController: NSObject {
         }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.soundEnabledKey)
+        }
+    }
+    private var alertHoursEnabled: Bool {
+        get {
+            UserDefaults.standard.object(forKey: Self.alertHoursEnabledKey) as? Bool ?? false
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.alertHoursEnabledKey)
+        }
+    }
+    private var alertStartMinute: Int {
+        get {
+            UserDefaults.standard.object(forKey: Self.alertStartMinuteKey) as? Int ?? Self.defaultAlertStartMinute
+        }
+        set {
+            UserDefaults.standard.set(normalizedMinute(newValue), forKey: Self.alertStartMinuteKey)
+        }
+    }
+    private var alertEndMinute: Int {
+        get {
+            UserDefaults.standard.object(forKey: Self.alertEndMinuteKey) as? Int ?? Self.defaultAlertEndMinute
+        }
+        set {
+            UserDefaults.standard.set(normalizedMinute(newValue), forKey: Self.alertEndMinuteKey)
         }
     }
 
@@ -52,7 +82,7 @@ final class ReminderController: NSObject {
         self.ongoingEvents = ongoingEvents.filter { $0.endDate > now }
 
         let state = displayState(for: event, accessMessage: accessMessage, now: now)
-        setStatusAppearance(title: state.title, backgroundColor: state.backgroundColor)
+        setStatusAppearance(state: state)
         updateSound(for: event, now: now)
         rebuildMenu(state: state)
     }
@@ -113,6 +143,44 @@ final class ReminderController: NSObject {
         }
     }
 
+    @objc private func toggleAlertHours(_ sender: NSMenuItem) {
+        alertHoursEnabled.toggle()
+        refreshAction()
+    }
+
+    @objc private func editAlertHours(_ sender: NSMenuItem) {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Set Alert Hours"
+        alert.informativeText = "MeetingBell will only play sound notifications for meetings that start during this window."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.accessoryView = alertHoursAccessoryView()
+
+        let controls = alert.accessoryView?.subviews
+            .compactMap { $0 as? NSTextField }
+            .filter(\.isEditable) ?? []
+
+        guard alert.runModal() == .alertFirstButtonReturn,
+              controls.count == 2
+        else {
+            return
+        }
+
+        guard let startMinute = minuteOfDay(from: controls[0].stringValue),
+              let endMinute = minuteOfDay(from: controls[1].stringValue)
+        else {
+            showInvalidAlertHoursMessage()
+            return
+        }
+
+        alertStartMinute = startMinute
+        alertEndMinute = endMinute
+        alertHoursEnabled = true
+        refreshAction()
+    }
+
     @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
         do {
             try LaunchAtLoginController.setEnabled(!LaunchAtLoginController.isEnabled)
@@ -130,11 +198,28 @@ final class ReminderController: NSObject {
 
     private func displayState(for event: MeetingEvent?, accessMessage: String?, now: Date) -> DisplayState {
         if let accessMessage {
-            return DisplayState(title: "MeetingBell", backgroundColor: .white, detail: accessMessage, canAcknowledge: false)
+            return DisplayState(
+                title: "MeetingBell",
+                backgroundColor: .white,
+                detail: accessMessage,
+                canAcknowledge: false,
+                isQuietHours: false,
+                quietHoursMessage: nil
+            )
         }
 
+        let quietHours = isQuietHours(now: now)
+        let quietHoursMessage = quietHours ? quietHoursStatusMessage(now: now) : nil
+
         guard let event else {
-            return DisplayState(title: "No meetings", backgroundColor: .white, detail: "No upcoming meetings in the next 24 hours.", canAcknowledge: false)
+            return DisplayState(
+                title: quietHours ? "Zz" : "No meetings",
+                backgroundColor: .white,
+                detail: "No upcoming meetings in the next 24 hours.",
+                canAcknowledge: false,
+                isQuietHours: quietHours,
+                quietHoursMessage: quietHoursMessage
+            )
         }
 
         let secondsUntilStart = event.startDate.timeIntervalSince(now)
@@ -165,20 +250,28 @@ final class ReminderController: NSObject {
             canAcknowledge = true
         }
 
-        return DisplayState(title: title, backgroundColor: backgroundColor, detail: detail, canAcknowledge: canAcknowledge)
+        return DisplayState(
+            title: quietHours ? "Zz" : title,
+            backgroundColor: quietHours ? .white : backgroundColor,
+            detail: detail,
+            canAcknowledge: canAcknowledge,
+            isQuietHours: quietHours,
+            quietHoursMessage: quietHoursMessage
+        )
     }
 
-    private func setStatusAppearance(title: String, backgroundColor: NSColor) {
+    private func setStatusAppearance(state: DisplayState) {
         let maxLength = 20
-        let titledWithIcon = "⏰ \(title)"
+        let titledWithIcon = state.isQuietHours ? state.title : "⏰ \(state.title)"
         let shortened = titledWithIcon.count > maxLength ? "\(titledWithIcon.prefix(maxLength - 3))..." : titledWithIcon
+        let foregroundColor = state.isQuietHours ? NSColor.labelColor.withAlphaComponent(0.35) : NSColor.black.withAlphaComponent(0.72)
         let attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: NSColor.black.withAlphaComponent(0.72),
+            .foregroundColor: foregroundColor,
             .font: NSFont.menuBarFont(ofSize: 0)
         ]
 
         statusItem.button?.attributedTitle = NSAttributedString(string: shortened, attributes: attributes)
-        statusItem.button?.layer?.backgroundColor = backgroundColor.withAlphaComponent(0.95).cgColor
+        statusItem.button?.layer?.backgroundColor = state.backgroundColor.withAlphaComponent(0.95).cgColor
     }
 
     private func configureStatusButton() {
@@ -200,6 +293,17 @@ final class ReminderController: NSObject {
             rebuildDingingMenu(menu: menu, state: state)
             statusItem.menu = menu
             return
+        }
+
+        if state.isQuietHours {
+            menu.addItem(sectionHeader("Do Not Disturb"))
+
+            if let quietHoursMessage = state.quietHoursMessage {
+                menu.addItem(disabledItem(quietHoursMessage))
+            }
+
+            menu.addItem(disabledItem("Alert hours: \(formatAlertHoursRange())"))
+            menu.addItem(.separator())
         }
 
         let ongoingEvents = activeOngoingEvents()
@@ -248,6 +352,15 @@ final class ReminderController: NSObject {
         soundItem.target = self
         soundItem.state = soundEnabled ? .on : .off
         menu.addItem(soundItem)
+
+        let alertHoursItem = NSMenuItem(title: "Limit Alerts to Hours", action: #selector(toggleAlertHours), keyEquivalent: "")
+        alertHoursItem.target = self
+        alertHoursItem.state = alertHoursEnabled ? .on : .off
+        menu.addItem(alertHoursItem)
+
+        let editAlertHoursItem = NSMenuItem(title: "Alert Hours: \(formatAlertHoursRange())", action: #selector(editAlertHours), keyEquivalent: "")
+        editAlertHoursItem.target = self
+        menu.addItem(editAlertHoursItem)
 
         let launchAtLoginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         launchAtLoginItem.target = self
@@ -379,6 +492,7 @@ final class ReminderController: NSObject {
             let event,
             event.startDate <= now,
             event.startDate >= sessionStartedAt,
+            alertHoursAllowSound(for: event, now: now),
             !isAcknowledged(event)
         else {
             stopSound()
@@ -418,6 +532,44 @@ final class ReminderController: NSObject {
         }
     }
 
+    private func alertHoursAllowSound(for event: MeetingEvent, now: Date) -> Bool {
+        guard alertHoursEnabled else { return true }
+
+        return isInAlertHours(event.startDate) && isInAlertHours(now)
+    }
+
+    private func isQuietHours(now: Date) -> Bool {
+        alertHoursEnabled && !isInAlertHours(now)
+    }
+
+    private func isInAlertHours(_ date: Date) -> Bool {
+        let minute = minuteOfDay(for: date)
+        let startMinute = alertStartMinute
+        let endMinute = alertEndMinute
+
+        if startMinute == endMinute {
+            return true
+        }
+
+        if startMinute < endMinute {
+            return minute >= startMinute && minute < endMinute
+        }
+
+        return minute >= startMinute || minute < endMinute
+    }
+
+    private func minuteOfDay(for date: Date) -> Int {
+        let components = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let hour = components.hour ?? 0
+        let minute = components.minute ?? 0
+
+        return hour * 60 + minute
+    }
+
+    private func normalizedMinute(_ minute: Int) -> Int {
+        ((minute % Self.minutesPerDay) + Self.minutesPerDay) % Self.minutesPerDay
+    }
+
     private func isAcknowledged(_ event: MeetingEvent?) -> Bool {
         guard let event else { return false }
 
@@ -447,6 +599,125 @@ final class ReminderController: NSObject {
         showOnlyTime ? prefix : "\(prefix) - \(event.title)"
     }
 
+    private func formatAlertHoursRange() -> String {
+        "\(formatMinuteOfDay(alertStartMinute)) - \(formatMinuteOfDay(alertEndMinute))"
+    }
+
+    private func formatMinuteOfDay(_ minute: Int) -> String {
+        var components = DateComponents()
+        components.year = 2000
+        components.month = 1
+        components.day = 1
+        components.hour = minute / 60
+        components.minute = minute % 60
+
+        guard let date = Calendar.current.date(from: components) else {
+            return "12:00 AM"
+        }
+
+        return formatTime(date)
+    }
+
+    private func quietHoursStatusMessage(now: Date) -> String {
+        "Sound alerts resume at \(formatTime(nextAlertStart(after: now)))"
+    }
+
+    private func nextAlertStart(after date: Date) -> Date {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: date)
+        let hour = alertStartMinute / 60
+        let minute = alertStartMinute % 60
+        let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: today) ?? date
+
+        if candidate > date {
+            return candidate
+        }
+
+        return calendar.date(byAdding: .day, value: 1, to: candidate) ?? date
+    }
+
+    private func alertHoursAccessoryView() -> NSView {
+        let accessoryView = NSView(frame: NSRect(x: 0, y: 0, width: 270, height: 64))
+
+        let startField = NSTextField(frame: NSRect(x: 80, y: 34, width: 180, height: 24))
+        startField.stringValue = formatMinuteOfDay(alertStartMinute)
+        startField.placeholderString = "9:00 AM"
+
+        let endField = NSTextField(frame: NSRect(x: 80, y: 4, width: 180, height: 24))
+        endField.stringValue = formatMinuteOfDay(alertEndMinute)
+        endField.placeholderString = "6:00 PM"
+
+        let startLabel = NSTextField(labelWithString: "Start")
+        startLabel.frame = NSRect(x: 0, y: 36, width: 72, height: 20)
+
+        let endLabel = NSTextField(labelWithString: "End")
+        endLabel.frame = NSRect(x: 0, y: 6, width: 72, height: 20)
+
+        accessoryView.addSubview(startField)
+        accessoryView.addSubview(endField)
+        accessoryView.addSubview(startLabel)
+        accessoryView.addSubview(endLabel)
+
+        return accessoryView
+    }
+
+    private func minuteOfDay(from input: String) -> Int? {
+        let text = input
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+            .replacingOccurrences(of: ".", with: "")
+
+        guard !text.isEmpty else { return nil }
+
+        let pattern = #"^(\d{1,2})(?::(\d{2}))?\s*([AP]M)?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)),
+              let hourText = capture(match.range(at: 1), in: text),
+              var hour = Int(hourText)
+        else {
+            return nil
+        }
+
+        let minute = capture(match.range(at: 2), in: text).flatMap(Int.init) ?? 0
+        let suffix = capture(match.range(at: 3), in: text)
+
+        guard minute >= 0 && minute < 60 else { return nil }
+
+        if let suffix {
+            guard hour >= 1 && hour <= 12 else { return nil }
+
+            if suffix == "PM", hour != 12 {
+                hour += 12
+            } else if suffix == "AM", hour == 12 {
+                hour = 0
+            }
+        } else {
+            guard hour >= 0 && hour < 24 else { return nil }
+        }
+
+        return hour * 60 + minute
+    }
+
+    private func capture(_ range: NSRange, in text: String) -> String? {
+        guard range.location != NSNotFound,
+              let swiftRange = Range(range, in: text)
+        else {
+            return nil
+        }
+
+        return String(text[swiftRange])
+    }
+
+    private func showInvalidAlertHoursMessage() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Alert Hours Were Not Saved"
+        alert.informativeText = "Use times like 9:00 AM, 6 PM, or 17:30."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     private func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -460,4 +731,6 @@ private struct DisplayState {
     let backgroundColor: NSColor
     let detail: String
     let canAcknowledge: Bool
+    let isQuietHours: Bool
+    let quietHoursMessage: String?
 }

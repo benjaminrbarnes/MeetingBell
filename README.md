@@ -18,6 +18,7 @@ It reads your local macOS Calendar events, shows a countdown to the next meeting
 - 🟥 Turns red once the meeting starts.
 ### Get Pulled In
 - 🔔 Optional `Play Sound Until Silenced` mode.
+- 💤 Optional alert hours suppress sound outside your chosen window.
 - 👆 While ringing, the menu only shows `Silence Meeting`.
 - 🚪 Skips meetings already in progress when MeetingBell opens.
 - 🔗 Shows `Join Meeting` when it finds Zoom, Meet, Teams, Chime, Webex, or BlueJeans links.
