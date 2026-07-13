@@ -101,6 +101,12 @@ final class ReminderController: NSObject {
         refreshAction()
     }
 
+    @objc private func skipCurrentEvent() {
+        guard silenceCurrentEvent() != nil else { return }
+
+        refreshAction()
+    }
+
     @objc private func acknowledgeAndJoinCurrentEvent() {
         guard let silencedEvent = silenceCurrentEvent() else { return }
 
@@ -335,6 +341,8 @@ final class ReminderController: NSObject {
 
             if state.canAcknowledge {
                 addDismissActions(for: currentEvent, to: menu)
+            } else {
+                addSkipAction(for: currentEvent, to: menu)
             }
         } else {
             menu.addItem(disabledItem(state.detail))
@@ -424,6 +432,13 @@ final class ReminderController: NSObject {
         dismissItem.target = self
         dismissItem.isEnabled = true
         menu.addItem(dismissItem)
+    }
+
+    private func addSkipAction(for event: MeetingEvent, to menu: NSMenu) {
+        let skipItem = NSMenuItem(title: "Skip This Meeting", action: #selector(skipCurrentEvent), keyEquivalent: "")
+        skipItem.target = self
+        skipItem.isEnabled = true
+        menu.addItem(skipItem)
     }
 
     private func addMeetingDetails(
