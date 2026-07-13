@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="MeetingBell"
-VERSION="${1:-0.1.3}"
+VERSION="${1:-0.1.4}"
 RELEASE_DIR="$PROJECT_DIR/release"
 APP_PATH="$PROJECT_DIR/$APP_NAME.app"
 ZIP_PATH="$RELEASE_DIR/$APP_NAME-$VERSION-macOS.zip"
